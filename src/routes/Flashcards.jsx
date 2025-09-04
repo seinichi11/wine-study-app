@@ -27,6 +27,9 @@ export default function Flashcards() {
 
   useEffect(() => {
     const onKey = (e) => {
+      // 入力中は無効化（フォーカスがinput/textarea/selectの時）
+      const tag = (e.target && e.target.tagName) || "";
+      if (/(INPUT|TEXTAREA|SELECT)/i.test(tag)) return;
       if (e.key === " ") {
         e.preventDefault();
         setFlipped((v) => !v);
@@ -36,7 +39,7 @@ export default function Flashcards() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [i]);
+  }, [i, phase]);
 
   function animateToNext(nextDir) {
     if (phase !== "idle") return;
@@ -173,10 +176,7 @@ export default function Flashcards() {
           覚えたリセット
         </button>
       </div>
-
-      <p style={help}>
-        ヒント：スペース=反転、←/→=前後。移動時にスライド＆フェードします。
-      </p>
+      <p style={help}>PC：スペース=反転、←/→=前後のカードに移動します。</p>
     </div>
   );
 }
