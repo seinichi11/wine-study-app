@@ -1,11 +1,73 @@
-import { useState } from "react";
-import questions from "../data/quiz.json";
+import { useMemo, useState, useEffect } from "react";
+import { useParams, useLocation } from "react-router-dom";
+import rawQuestions from "../data/quiz.json"; // 1ファイルに集約（topic付き想定）
+
+// 破壊しないシャッフル
+function shuffle(a) {
+  const arr = a.slice();
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+// question/options/answer(string) でも q/choices/answer(number) でもOKにする正規化
+function normalizeItem(item) {
+  // 既存のあなたの形式：{ q, choices, answer(number) }
+  if (item.q && Array.isArray(item.choices)) {
+    return {
+      q: item.q,
+      choices: item.choices,
+      answerIndex:
+        typeof item.answer === "number"
+          ? item.answer
+          : Math.max(0, item.choices.indexOf(item.answer)),
+    };
+  }
+  // もう一つの形式：{ question, options, answer(string) }
+  if (item.question && Array.isArray(item.options)) {
+    const idx = item.options.indexOf(item.answer);
+    return {
+      q: item.question,
+      choices: item.options,
+      answerIndex: idx >= 0 ? idx : 0,
+    };
+  }
+  // フォールバック（不正データ）
+  return { q: "（不明な問題形式）", choices: [], answerIndex: 0 };
+}
 
 export default function Quiz() {
-  const list = Array.isArray(questions) ? questions : [];
+  // /quiz/:topic or /quiz?topic=xxx
+  const { topic: topicFromPath } = useParams();
+  const { search } = useLocation();
+  const qs = new URLSearchParams(search);
+  const topicFromQuery = qs.get("topic");
+  const topic = topicFromPath || topicFromQuery || "";
+  const limit = Number(qs.get("limit") || 0); // 0なら制限なし
+  const useRandom = qs.get("random") === "1";
+
+  // ① topicで絞り → ② シャッフル → ③ limit を適用 → ④ 正規化
+  const list = useMemo(() => {
+    let base = Array.isArray(rawQuestions) ? rawQuestions : [];
+    if (topic) base = base.filter((q) => q.topic === topic);
+    if (useRandom) base = shuffle(base);
+    if (limit > 0) base = base.slice(0, limit);
+    return base.map(normalizeItem);
+  }, [topic, limit, useRandom]);
+
+  // ② 出題ポインタと状態
   const [i, setI] = useState(0);
   const [selected, setSelected] = useState(null);
   const [checked, setChecked] = useState(false);
+
+  // 条件（topic/limit/random）が変わったらリセット
+  useEffect(() => {
+    setI(0);
+    setSelected(null);
+    setChecked(false);
+  }, [list]);
 
   // 範囲外になったら0に戻す
   const safeIndex = list.length ? Math.min(i, list.length - 1) : 0;
@@ -13,11 +75,16 @@ export default function Quiz() {
 
   if (!list.length) {
     return (
-      <div style={{ padding: 24 }}>
+      <div style={{ padding: 24, maxWidth: 720, margin: "0 auto" }}>
         <h2>クイズデータが見つかりません</h2>
-        <p>
-          ファイル: <code>src/data/questions_basic.json</code>{" "}
-          を確認してください。
+        <p style={{ marginTop: 8 }}>
+          対象: <code>{topic || "all"}</code>
+        </p>
+        <p style={{ marginTop: 8 }}>
+          ファイル: <code>src/data/quiz.json</code> を確認してください。
+        </p>
+        <p style={{ marginTop: 8 }}>
+          <a href="/quiz">全体から挑戦する</a>
         </p>
       </div>
     );
@@ -46,6 +113,11 @@ export default function Quiz() {
       >
         <span>
           問題 {safeIndex + 1} / {list.length}
+          {topic && (
+            <span style={{ marginLeft: 8, color: "#888", fontSize: 12 }}>
+              topic: {topic}
+            </span>
+          )}
         </span>
       </div>
 
@@ -55,7 +127,7 @@ export default function Quiz() {
 
       <ul style={{ listStyle: "none", padding: 0, marginTop: 16 }}>
         {(q?.choices ?? []).map((c, idx) => {
-          const isAnswer = idx === q.answer;
+          const isAnswer = idx === q.answerIndex;
           const isSelected = idx === selected;
           const showJudge = checked && (isSelected || isAnswer);
           const bg = !checked
@@ -109,12 +181,12 @@ export default function Quiz() {
           <p
             style={{
               marginBottom: 12,
-              color: Number(selected) === q.answer ? "#0a0" : "#a00",
+              color: Number(selected) === q.answerIndex ? "#0a0" : "#a00",
             }}
           >
-            {Number(selected) === q.answer
+            {Number(selected) === q.answerIndex
               ? "正解！"
-              : `不正解… 正解は「${q.choices?.[q.answer]}」`}
+              : `不正解… 正解は「${q.choices?.[q.answerIndex]}」`}
           </p>
           <button onClick={next} style={btnGhost}>
             次へ

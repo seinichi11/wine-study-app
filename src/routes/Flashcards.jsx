@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import cards from "../data/flashcards.json";
+import { useParams, useLocation } from "react-router-dom";
+import cardsAll from "../data/flashcards.json";
 import {
   loadKnownCardIds,
   saveKnownCardIds,
   resetKnownCardIds,
 } from "../lib/storage";
 
+// -------- utils --------
 function shuffle(arr) {
   const a = arr.slice();
   for (let i = a.length - 1; i > 0; i--) {
@@ -16,20 +18,56 @@ function shuffle(arr) {
 }
 
 export default function Flashcards() {
-  const knownSetInitial = useMemo(() => loadKnownCardIds(), []);
-  const [known, setKnown] = useState(knownSetInitial);
-  const [order, setOrder] = useState(() => shuffle(cards));
+  const { topic: topicFromPath } = useParams();
+  const { search } = useLocation();
+  const topicFromQuery = new URLSearchParams(search).get("topic");
+  const topic = topicFromPath || topicFromQuery || "";
+
+  // 1) topicでフィルタした配列（元データは cardsAll）
+  const cardsFiltered = useMemo(() => {
+    return topic ? cardsAll.filter((c) => c.topic === topic) : cardsAll;
+  }, [topic]);
+
+  // 0件ガード
+  if (!cardsFiltered.length) {
+    return (
+      <div style={{ maxWidth: 720, margin: "0 auto", padding: 24 }}>
+        <h1>暗記カード</h1>
+        <p>
+          このトピックのカードはまだありません （topic:{" "}
+          <code>{topic || "all"}</code>）。
+        </p>
+        <p>
+          <a href="/flashcards">全カードを見る</a>
+        </p>
+      </div>
+    );
+  }
+
+  // 2) 以降は “必ず” cardsFiltered を使う
+  const [order, setOrder] = useState(() => shuffle(cardsFiltered));
   const [i, setI] = useState(0);
   const [flipped, setFlipped] = useState(false);
   const [phase, setPhase] = useState("idle");
   const [dir, setDir] = useState(1);
+  const [known, setKnown] = useState(() => loadKnownCardIds());
   const card = order[i];
 
+  // topicが変わったらリセット
+  useEffect(() => {
+    setOrder(shuffle(cardsFiltered));
+    setI(0);
+    setFlipped(false);
+    setDir(1);
+    setPhase("idle");
+  }, [cardsFiltered]);
+
+  // キー操作（最新phaseを見る）
   useEffect(() => {
     const onKey = (e) => {
-      // 入力中は無効化（フォーカスがinput/textarea/selectの時）
       const tag = (e.target && e.target.tagName) || "";
       if (/(INPUT|TEXTAREA|SELECT)/i.test(tag)) return;
+
       if (e.key === " ") {
         e.preventDefault();
         setFlipped((v) => !v);
@@ -63,10 +101,11 @@ export default function Flashcards() {
     saveKnownCardIds(next);
     animateToNext(1);
   }
+
   function reshuffle() {
     setPhase("leaving");
     setTimeout(() => {
-      setOrder(shuffle(cards));
+      setOrder(shuffle(cardsFiltered));
       setI(0);
       setFlipped(false);
       setDir(1);
@@ -74,6 +113,7 @@ export default function Flashcards() {
       setTimeout(() => setPhase("idle"), 180);
     }, 180);
   }
+
   function resetKnown() {
     resetKnownCardIds();
     setKnown(new Set());
@@ -86,18 +126,10 @@ export default function Flashcards() {
       opacity: 1,
     };
     if (phase === "leaving") {
-      return {
-        ...base,
-        transform: `translateX(${dir * 24}px)`,
-        opacity: 0,
-      };
+      return { ...base, transform: `translateX(${dir * 24}px)`, opacity: 0 };
     }
     if (phase === "entering") {
-      return {
-        ...base,
-        transform: `translateX(${dir * -24}px)`,
-        opacity: 0,
-      };
+      return { ...base, transform: `translateX(${dir * -24}px)`, opacity: 0 };
     }
     return base;
   })();
@@ -107,13 +139,16 @@ export default function Flashcards() {
       <header style={header}>
         <div>
           カード {i + 1} / {order.length}
+          {topic && (
+            <span style={{ marginLeft: 8, color: "#888", fontSize: 12 }}>
+              topic: {topic}
+            </span>
+          )}
         </div>
         <div>覚えた: {known.size}</div>
       </header>
 
-      {}
       <div style={{ ...motion }}>
-        {}
         <div
           style={cardScene}
           onClick={() => setFlipped((v) => !v)}
@@ -126,12 +161,10 @@ export default function Flashcards() {
               transform: `rotateY(${flipped ? 180 : 0}deg)`,
             }}
           >
-            {}
             <div style={{ ...cardFace, ...cardFront }}>
               <div style={faceText}>{card.front}</div>
               <div style={hint}>クリック/スペースで裏面</div>
             </div>
-            {}
             <div style={{ ...cardFace, ...cardBack }}>
               <div style={faceText}>{card.back}</div>
               <div style={hint}>クリック/スペースで表面</div>
@@ -176,7 +209,8 @@ export default function Flashcards() {
           覚えたリセット
         </button>
       </div>
-      <p style={help}>PC：スペース=反転、←/→=前後のカードに移動します。</p>
+
+      <p style={help}>スペース=反転、←/→=前後のカードに移動します。</p>
     </div>
   );
 }
@@ -194,7 +228,6 @@ const header = {
   marginBottom: 12,
   color: "#444",
 };
-
 const cardScene = {
   width: "100%",
   maxWidth: 640,
@@ -233,7 +266,6 @@ const hint = {
   fontSize: 12,
   color: "#888",
 };
-
 const actions = {
   display: "flex",
   gap: 8,
@@ -248,7 +280,6 @@ const subActions = {
   marginTop: 8,
   flexWrap: "wrap",
 };
-
 const btnPrimary = {
   background: "#8B0000",
   color: "#fff",
