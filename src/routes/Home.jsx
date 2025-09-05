@@ -1,8 +1,19 @@
 import { Link } from "react-router-dom";
+import { Helmet } from "react-helmet-async";
+import articles from "../data/articles.json";
 
 export default function Home() {
+  const latest = [...articles].sort((a, b) => (a.date < b.date ? 1 : -1))[0];
+
   return (
     <section className="container" style={{ display: "grid", gap: 24 }}>
+      <Helmet>
+        <title>Wine Study App | ワインエキスパート・ソムリエ試験対策</title>
+        <meta
+          name="description"
+          content="クイズと暗記カードで効率よく学習できる無料アプリ。ワインエキスパート・ソムリエ試験の一次試験対策に最適です。"
+        />
+      </Helmet>
       <div className="hero">
         <div className="hero-bg" />
         <div className="tag">ワインエキスパート／ソムリエ試験対策</div>
@@ -22,6 +33,42 @@ export default function Home() {
           <Link to="/flashcards" className="btn btn-ghost">
             暗記カードへ
           </Link>
+        </div>
+      </div>
+
+      {/* 新着記事 */}
+      <div style={{ marginTop: 32, textAlign: "center" }}>
+        <h2 style={{ marginBottom: 12 }}>👉 新着記事</h2>
+        <div
+          style={{
+            display: "inline-block",
+            padding: "20px 24px",
+            background: "linear-gradient(135deg, #7A001C, #B03060)",
+            borderRadius: 12,
+            boxShadow: "0 6px 18px rgba(0,0,0,.2)",
+            color: "#fff",
+            textAlign: "left",
+            minWidth: 280,
+          }}
+        >
+          <div style={{ fontSize: 12, opacity: 0.9 }}>{latest.category}</div>
+          <Link
+            to={`/articles/${latest.slug}`}
+            style={{
+              color: "#fff",
+              fontWeight: "bold",
+              textDecoration: "none",
+              fontSize: 18,
+            }}
+          >
+            {latest.title}
+          </Link>
+          <p style={{ margin: "6px 0 0 0", opacity: 0.95 }}>{latest.excerpt}</p>
+          <div style={{ marginTop: 8 }}>
+            <Link to="/articles" style={{ color: "#fff", opacity: 0.9 }}>
+              すべての記事 →
+            </Link>
+          </div>
         </div>
       </div>
 

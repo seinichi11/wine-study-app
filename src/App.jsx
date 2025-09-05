@@ -1,10 +1,13 @@
 import { Link, Outlet } from "react-router-dom";
+import { Analytics } from "@vercel/analytics/react";
+import ScrollToTop from "./components/ScrollToTop";
 
 export default function App() {
   return (
     <div
       style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}
     >
+      <ScrollToTop />
       <header
         style={{
           position: "fixed",
