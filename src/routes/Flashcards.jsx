@@ -2,12 +2,13 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, useLocation } from "react-router-dom";
 import cardsAll from "../data/flashcards.json";
 import {
-  loadKnownCardIds,
-  saveKnownCardIds,
-  resetKnownCardIds,
-} from "../lib/storage";
+  persistStorage,
+  openDb,
+  readKnownIds,
+  addKnownId,
+  clearKnown,
+} from "../lib/sqlite";
 
-// -------- utils --------
 function shuffle(arr) {
   const a = arr.slice();
   for (let i = a.length - 1; i > 0; i--) {
@@ -23,12 +24,10 @@ export default function Flashcards() {
   const topicFromQuery = new URLSearchParams(search).get("topic");
   const topic = topicFromPath || topicFromQuery || "";
 
-  // 1) topicでフィルタした配列（元データは cardsAll）
   const cardsFiltered = useMemo(() => {
     return topic ? cardsAll.filter((c) => c.topic === topic) : cardsAll;
   }, [topic]);
 
-  // 0件ガード
   if (!cardsFiltered.length) {
     return (
       <div style={{ maxWidth: 720, margin: "0 auto", padding: 24 }}>
@@ -44,16 +43,28 @@ export default function Flashcards() {
     );
   }
 
-  // 2) 以降は “必ず” cardsFiltered を使う
   const [order, setOrder] = useState(() => shuffle(cardsFiltered));
   const [i, setI] = useState(0);
   const [flipped, setFlipped] = useState(false);
   const [phase, setPhase] = useState("idle");
   const [dir, setDir] = useState(1);
-  const [known, setKnown] = useState(() => loadKnownCardIds());
+  const [known, setKnown] = useState(new Set());
   const card = order[i];
 
-  // topicが変わったらリセット
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      await persistStorage();
+      await openDb();
+      if (cancelled) return;
+      const ids = await readKnownIds();
+      if (!cancelled) setKnown(ids);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   useEffect(() => {
     setOrder(shuffle(cardsFiltered));
     setI(0);
@@ -62,7 +73,6 @@ export default function Flashcards() {
     setPhase("idle");
   }, [cardsFiltered]);
 
-  // キー操作（最新phaseを見る）
   useEffect(() => {
     const onKey = (e) => {
       const tag = (e.target && e.target.tagName) || "";
@@ -94,11 +104,13 @@ export default function Flashcards() {
     }, 180);
   }
 
-  function markKnown() {
-    const next = new Set(known);
-    next.add(card.id);
-    setKnown(next);
-    saveKnownCardIds(next);
+  async function markKnown() {
+    if (card?.id != null) {
+      try {
+        await addKnownId(card.id);
+        setKnown((prev) => new Set(prev).add(String(card.id)));
+      } catch {}
+    }
     animateToNext(1);
   }
 
@@ -114,9 +126,12 @@ export default function Flashcards() {
     }, 180);
   }
 
-  function resetKnown() {
-    resetKnownCardIds();
-    setKnown(new Set());
+  async function resetKnown() {
+    try {
+      await clearKnown();
+    } finally {
+      setKnown(new Set());
+    }
   }
 
   const motion = (() => {
@@ -215,7 +230,7 @@ export default function Flashcards() {
   );
 }
 
-/* ===== styles ===== */
+/* ===== styles（既存据え置き） ===== */
 const wrap = {
   maxWidth: 720,
   margin: "0 auto",
