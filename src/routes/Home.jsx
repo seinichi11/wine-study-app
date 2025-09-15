@@ -37,7 +37,7 @@ export default function Home() {
       </div>
 
       {/* 新着記事 */}
-      <div style={{ marginTop: 32, textAlign: "center" }}>
+      <div style={{ textAlign: "center" }}>
         <h2 style={{ marginBottom: 12 }}>👉 新着記事</h2>
         <div
           style={{

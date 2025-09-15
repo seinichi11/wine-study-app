@@ -1,8 +1,13 @@
 import { useMemo, useState, useEffect } from "react";
 import { useParams, useLocation } from "react-router-dom";
-import rawQuestions from "../data/quiz.json"; // 1ファイルに集約（topic付き想定）
+import rawQuestions from "../data/quiz.json";
+import {
+  openDb,
+  recordAnswer,
+  persistStorage,
+  getWrongnessMap,
+} from "../lib/sqlite";
 
-// 破壊しないシャッフル
 function shuffle(a) {
   const arr = a.slice();
   for (let i = arr.length - 1; i > 0; i--) {
@@ -12,9 +17,7 @@ function shuffle(a) {
   return arr;
 }
 
-// question/options/answer(string) でも q/choices/answer(number) でもOKにする正規化
 function normalizeItem(item) {
-  // 既存のあなたの形式：{ q, choices, answer(number) }
   if (item.q && Array.isArray(item.choices)) {
     return {
       q: item.q,
@@ -25,7 +28,6 @@ function normalizeItem(item) {
           : Math.max(0, item.choices.indexOf(item.answer)),
     };
   }
-  // もう一つの形式：{ question, options, answer(string) }
   if (item.question && Array.isArray(item.options)) {
     const idx = item.options.indexOf(item.answer);
     return {
@@ -34,7 +36,6 @@ function normalizeItem(item) {
       answerIndex: idx >= 0 ? idx : 0,
     };
   }
-  // フォールバック（不正データ）
   return { q: "（不明な問題形式）", choices: [], answerIndex: 0 };
 }
 
@@ -45,10 +46,9 @@ export default function Quiz() {
   const qs = new URLSearchParams(search);
   const topicFromQuery = qs.get("topic");
   const topic = topicFromPath || topicFromQuery || "";
-  const limit = Number(qs.get("limit") || 0); // 0なら制限なし
+  const limit = Number(qs.get("limit") || 0);
   const useRandom = qs.get("random") === "1";
 
-  // ① topicで絞り → ② シャッフル → ③ limit を適用 → ④ 正規化
   const list = useMemo(() => {
     let base = Array.isArray(rawQuestions) ? rawQuestions : [];
     if (topic) base = base.filter((q) => q.topic === topic);
@@ -57,23 +57,74 @@ export default function Quiz() {
     return base.map(normalizeItem);
   }, [topic, limit, useRandom]);
 
-  // ② 出題ポインタと状態
+  const [ordered, setOrdered] = useState(list);
+
   const [i, setI] = useState(0);
   const [selected, setSelected] = useState(null);
   const [checked, setChecked] = useState(false);
 
-  // 条件（topic/limit/random）が変わったらリセット
+  // DB準備フラグ（効果の競合を避ける）
+  const [dbReady, setDbReady] = useState(false);
+
+  // 1) 初回：永続化許可＆DBオープン
   useEffect(() => {
+    (async () => {
+      await persistStorage();
+      await openDb();
+      setDbReady(true);
+    })();
+  }, []);
+
+  // 2) listが変わったら：UIリセット → 履歴で並べ替え
+  useEffect(() => {
+    let cancelled = false;
+
+    // まずUIリセット＆暫定表示
     setI(0);
     setSelected(null);
     setChecked(false);
-  }, [list]);
+    setOrdered(list);
 
-  // 範囲外になったら0に戻す
-  const safeIndex = list.length ? Math.min(i, list.length - 1) : 0;
-  const q = list[safeIndex];
+    (async () => {
+      if (!dbReady || !list.length) return;
+      try {
+        const keys = list.map((qItem) => {
+          const choices = (qItem?.choices ?? []).join("|");
+          return `${topic || "all"}::${qItem?.q || ""}::${choices}`;
+        });
 
-  if (!list.length) {
+        const stat = await getWrongnessMap(keys);
+        if (cancelled) return;
+
+        const sorted = [...list].sort((a, b) => {
+          const keyA = `${topic || "all"}::${a.q}::${(a.choices ?? []).join("|")}`;
+          const keyB = `${topic || "all"}::${b.q}::${(b.choices ?? []).join("|")}`;
+          const sa = stat.get(keyA) ?? { wrongs: 0, last: 0 };
+          const sb = stat.get(keyB) ?? { wrongs: 0, last: 0 };
+          if (sb.wrongs !== sa.wrongs) return sb.wrongs - sa.wrongs;
+          return sa.last - sb.last;
+        });
+
+        setOrdered(sorted);
+      } catch {
+        setOrdered(list);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [list, dbReady, topic]);
+
+  const safeIndex = ordered.length ? Math.min(i, ordered.length - 1) : 0;
+  const q = ordered[safeIndex];
+
+  function questionKeyOf(qItem) {
+    const choices = (qItem?.choices ?? []).join("|");
+    return `${topic || "all"}::${qItem?.q || ""}::${choices}`;
+  }
+
+  if (!ordered.length) {
     return (
       <div style={{ padding: 24, maxWidth: 720, margin: "0 auto" }}>
         <h2>クイズデータが見つかりません</h2>
@@ -90,15 +141,19 @@ export default function Quiz() {
     );
   }
 
-  function submit() {
+  async function submit() {
     if (selected == null) return;
+    try {
+      await recordAnswer(questionKeyOf(q), Number(selected) === q.answerIndex);
+    } catch {
+    }
     setChecked(true);
   }
 
   function next() {
     setSelected(null);
     setChecked(false);
-    if (safeIndex + 1 < list.length) setI(safeIndex + 1);
+    if (safeIndex + 1 < ordered.length) setI(safeIndex + 1);
     else setI(0);
   }
 
@@ -112,7 +167,7 @@ export default function Quiz() {
         }}
       >
         <span>
-          問題 {safeIndex + 1} / {list.length}
+          問題 {safeIndex + 1} / {ordered.length}
           {topic && (
             <span style={{ marginLeft: 8, color: "#888", fontSize: 12 }}>
               topic: {topic}
