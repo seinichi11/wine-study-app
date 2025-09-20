@@ -24,6 +24,9 @@ export default function Home() {
           スキマ時間で頻出用語・産地・品種を反復学習できます
         </p>
         <div className="hero-cta">
+          <Link to="/maps/burgundy" className="btn btn-primary">
+            地図問題を始める
+          </Link>
           <Link to="/quiz" className="btn btn-primary">
             クイズを始める
           </Link>

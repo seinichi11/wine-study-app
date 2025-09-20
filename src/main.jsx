@@ -14,6 +14,7 @@ import ArticlesIndex from "./routes/articles/Index";
 import Burgundy from "./routes/articles/Burgundy";
 import Chardonnay from "./routes/articles/Chardonnay";
 import BordeauxClassification from "./routes/articles/BordeauxClassification";
+import MapBordeaux from "./routes/maps/Bordeaux";
 
 const router = createBrowserRouter([
   {
@@ -38,6 +39,8 @@ const router = createBrowserRouter([
         path: "articles/bordeaux-classification",
         element: <BordeauxClassification />,
       },
+      // map
+      { path: "maps/burgundy", element: <MapBordeaux /> },
     ],
   },
 ]);
